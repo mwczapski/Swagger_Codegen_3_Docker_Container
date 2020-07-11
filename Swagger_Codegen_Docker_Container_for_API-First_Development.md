@@ -10,7 +10,9 @@
       - [Create Host directories](#create-host-directories)
       - [Create the example openapi.yaml API Specification (OpenAPI 3.0.1)](#create-the-example-openapiyaml-api-specification-openapi-301)
     - [Create Docker Image](#create-docker-image)
+      - [Create generate_nodejs_stubs_server.sh Script](#create-generate_nodejs_stubs_serversh-script)
       - [Create run_nodejs_stubs_server.sh Script](#create-run_nodejs_stubs_serversh-script)
+      - [Create swagger-codegen yaml to json and back convert example](#create-swagger-codegen-yaml-to-json-and-back-convert-example)
       - [Create Dockerfile in the Host directory](#create-dockerfile-in-the-host-directory)
       - [Create baseline Docker Image](#create-baseline-docker-image)
     - [Start the Docker Container Instance](#start-the-docker-container-instance)
@@ -84,7 +86,7 @@ If this does not match your environment then you will need to make such adjustme
 #### Create Host directories
 
 ```shell
-mkdir -pv /mnt/d/github_materials/swagger_codegen/api
+mkdir -pv /mnt/d/github_materials/swagger_codegen/{api,scripts}
 cd /mnt/d/github_materials/swagger_codegen
 
 ```
@@ -156,6 +158,58 @@ The Dockerfile and following instructions will create a baseline Docker Image. T
 
 [[Top]](#swagger-codegen-30-docker-container)
 
+#### Create generate_nodejs_stubs_server.sh Script
+
+Create a start script that will generate nodejs server stubs.
+
+
+``` shell
+HOST_DIR=/mnt/d/github_materials
+
+cat <<-'EOF' > ${HOST_DIR}/swagger_codegen/scripts/generate_nodejs_stubs_server.sh
+#!/bin/bash
+
+cd /stubs_nodejs
+
+# generate stubs
+#
+java -jar /swagger_tools/swagger-codegen/swagger-codegen-cli.jar generate -i /api/openapi.yaml -l nodejs-server -o /stubs_nodejs
+sed -i 's|8080|3003|' /stubs_nodejs/index.js
+
+grep 'Access-Control-Allow-Origin' /stubs_nodejs/index.js | {
+  sed -i.bak '/expressAppConfig.getApp/a \
+\
+    // Add headers \
+    app.use(function (req, res, next) { \
+      // Website you wish to allow to connect \
+      res.setHeader("Access-Control-Allow-Origin", "*"); \
+\
+      // Request methods you wish to allow \
+      // res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, PATCH, DELETE"); \
+      res.setHeader("Access-Control-Allow-Methods", "*"); \
+\
+      // Request headers you wish to allow \
+      res.setHeader("Access-Control-Allow-Headers", "*"); \
+\
+      // Set to true if you need the website to include cookies in the requests sent \
+      // to the API (e.g. in case you use sessions) \
+      res.setHeader("Access-Control-Allow-Credentials", true); \
+\
+      // Pass to next layer of middleware \
+      next(); \
+    });\
+' /stubs_nodejs/index.js
+}
+
+[[ -d /stubs_nodejs/node_modules ]] || npm install
+
+EOF
+
+```
+
+[[Top]](#swagger-codegen-30-docker-container)
+
+
 #### Create run_nodejs_stubs_server.sh Script
 
 Create a server start script, to be executed from the docker-entrypoint.sh in the container on container start and restart.
@@ -167,60 +221,55 @@ HOST_DIR=/mnt/d/github_materials
 cat <<-'EOF' > ${HOST_DIR}/swagger_codegen/scripts/run_nodejs_stubs_server.sh
 #!/bin/bash
 
-cd /swagger_tools
+# pass the api config to the ui for serving
+#
+cp -v /api/* /stubs_nodejs/node_modules/oas3-tools/dist/middleware/swagger-ui || true
 
-[[ -f /api/.no_autostart ]] && exit
-
+# run the generate and start stubs server logic if conditions are met
+#
 cd /stubs_nodejs
+[[ -f /api/.no_autostart ]] && exit
 
 # generate stubs
 #
-if [[ ! -f /api/.no_autogenerate ]]
-then
+[[ ! -f /api/.no_autogenerate ]] && /swagger_tools/generate_nodejs_stubs_server.sh
 
-  java -jar /swagger_tools/swagger-codegen/swagger-codegen-cli.jar generate -i /api/openapi.yaml -l nodejs-server -o /stubs_nodejs
-  echo "sed -i 's|8080|3003|' /stubs_nodejs/index.js"
+[[ ! -f /stubs_nodejs/index.js ]] && { echo "Stubs are not available - can't start server" && exit; } 
+[[ ! -d /stubs_nodejs/node_modules ]] && { echo "Stubs were not installed - can't start server" && exit; } 
 
-  echo "grep 'Access-Control-Allow-Origin' /stubs_nodejs/index.js || {
-
-    echo "sed -i.bak '/expressAppConfig.getApp/a \
-    \
-    // Add headers \
-    app.use(function (req, res, next) { \
-    \
-        // Website you wish to allow to connect \
-        res.setHeader("Access-Control-Allow-Origin", "*"); \
-    \
-        // Request methods you wish to allow \
-        // res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, PATCH, DELETE"); \
-        res.setHeader\("Access-Control-Allow-Methods", "*); \
-    \
-        // Request headers you wish to allow \
-        res.setHeader("Access-Control-Allow-Headers", "*"); \ 
-    \
-        // Set to true if you need the website to include cookies in the requests sent \
-        // to the API (e.g. in case you use sessions) \
-        res.setHeader("Access-Control-Allow-Credentials", true); \
-    \
-        // Pass to next layer of middleware \
-        next(); \
-    }); \
-  } /stubs_nodejs/index.js
-
-  [[ -d /stubs_nodejs/node_modules ]] || npm install
-
-fi
-
-cp -v /api/* /stubs_nodejs/node_modules/oas3-tools/dist/middleware/swagger-ui || true
-
+# run the watcher service
 nodemon -L -w /api/* -w /stubs_nodejs/* -x "node /stubs_nodejs/index.js"
 
 EOF
 
-chmod u+x ${HOST_DIR}/swagger_codegen/scripts/run_nodejs_stubs_server.sh
-
 ```
 
+[[Top]](#swagger-codegen-30-docker-container)
+
+#### Create swagger-codegen yaml to json and back convert example
+
+Create an example of converting YAML to JSON and back using swagger-codegen. Not needed for working with the Swagger Editor server in the container. 
+
+``` shell
+HOST_DIR=/mnt/d/github_materials
+
+cat <<-'EOF' > ${HOST_DIR}/swagger_codegen/scripts/swagger-codegen_convert_example.sh
+#!/bin/bash
+
+cd /swagger_tools/swagger-codegen
+
+# convert yaml to jason and back again example
+# not needed for work with the Swagger Editor server
+#
+cd /swagger_tools/swagger-codegen
+
+java -jar /swagger_tools/swagger-codegen/swagger-codegen-cli.jar generate -i /swagger_tools/swagger-codegen/openapi.yaml -l openapi -o /swagger_tools/swagger-codegen
+
+java -jar /swagger_tools/swagger-codegen/swagger-codegen-cli.jar generate -i /swagger_tools/swagger-codegen/openapi.json -l openapi-yaml -o /swagger_tools/swagger-codegen/converted
+
+EOF
+
+```
 
 [[Top]](#swagger-codegen-30-docker-container)
 
@@ -243,7 +292,7 @@ RUN apt-get update && \
   apt-get install -y \
     nano \
     dos2unix \
-    openjdk-8-jdk && \
+    openjdk-8-jdk \
     sqlite3 && \
   \
   npm i -g \
@@ -258,77 +307,40 @@ RUN apt-get update && \
   # create the api directory (to be masked by bound volume if required)
   #
   mkdir -pv /api/converted && \
-  mkdir -pv /stubs_nodejs
-
-COPY api/openapi.yaml /api
+  mkdir -pv /stubs_nodejs && \
+  mkdir -pv /swagger_tools/swagger-codegen
 
 RUN \
-  \
+  #
   # "install" swagger-codegen
   #
   mkdir -pv /swagger_tools/swagger-codegen && \
-  wget https://repo1.maven.org/maven2/io/swagger/codegen/v3/swagger-codegen-cli/3.0.20/swagger-codegen-cli-3.0.20.jar -O /swagger_tools/swagger-codegen/swagger-codegen-cli.jar && \
-  \
-  # convert yaml to jason and back again
-  #
-  cd /swagger_tools/swagger-codegen/ && \
-  java -jar ./swagger-codegen-cli.jar generate -i /api/openapi.yaml -l openapi -o /api && \
-  java -jar ./swagger-codegen-cli.jar generate -i /api/openapi.json -l openapi-yaml -o /api/converted
+  wget https://repo1.maven.org/maven2/io/swagger/codegen/v3/swagger-codegen-cli/3.0.20/swagger-codegen-cli-3.0.20.jar -O /swagger_tools/swagger-codegen/swagger-codegen-cli.jar 
+
+COPY api/openapi.yaml /api
+COPY scripts/run_nodejs_stubs_server.sh /swagger_tools
+COPY scripts/generate_nodejs_stubs_server.sh /swagger_tools
+COPY scripts/swagger-codegen_convert_example.sh /swagger_tools
 
 RUN \
-  # create "generate stubs and serve" script
+  # make scripts runnable
   #
-  echo '#!/bin/bash' > /stubs_nodejs/build_stubs.sh && \
-  echo 'cd /stubs_nodejs' >> /stubs_nodejs/build_stubs.sh && \
-  # echo 'touch /stubs_nodejs/nohup.out' >> /stubs_nodejs/build_stubs.sh && \
-  # echo 'chmod ug+rw /stubs_nodejs/nohup.out' >> /stubs_nodejs/build_stubs.sh && \
-  echo 'java -jar /swagger_tools/swagger-codegen/swagger-codegen-cli.jar generate -i /api/openapi.yaml -l nodejs-server -o /stubs_nodejs' >> /stubs_nodejs/build_stubs.sh && \
-  echo "sed -i 's|8080|3003|' /stubs_nodejs/index.js" >> /stubs_nodejs/build_stubs.sh && \
-  \
-  echo "grep 'Access-Control-Allow-Origin' /stubs_nodejs/index.js || \ " >> /stubs_nodejs/build_stubs.sh && \
-  echo "sed -i.bak '/expressAppConfig.getApp/a \ " >> /stubs_nodejs/build_stubs.sh && \
-  echo '\ ' >> /stubs_nodejs/build_stubs.sh && \
-  echo '// Add headers \ ' >> /stubs_nodejs/build_stubs.sh && \
-  echo 'app.use\(function \(req, res, next)\ { \ ' >> /stubs_nodejs/build_stubs.sh && \
-  echo '\ ' >> /stubs_nodejs/build_stubs.sh && \
-  echo '    // Website you wish to allow to connect \ ' >> /stubs_nodejs/build_stubs.sh && \
-  echo '    res.setHeader\("Access-Control-Allow-Origin", "*"\); \ ' >> /stubs_nodejs/build_stubs.sh && \
-  echo '\ ' >> /stubs_nodejs/build_stubs.sh && \
-  echo '    // Request methods you wish to allow \ ' >> /stubs_nodejs/build_stubs.sh && \
-  echo '    res.setHeader\("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, PATCH, DELETE"\); \ ' >> /stubs_nodejs/build_stubs.sh && \
-  echo '\ ' >> /stubs_nodejs/build_stubs.sh && \
-  echo '    // Request headers you wish to allow \ ' >> /stubs_nodejs/build_stubs.sh && \
-  echo '    res.setHeader\("Access-Control-Allow-Headers", "*"\); \ ' >> /stubs_nodejs/build_stubs.sh && \
-  echo '\ ' >> /stubs_nodejs/build_stubs.sh && \
-  echo '    // Set to true if you need the website to include cookies in the requests sent \ ' >> /stubs_nodejs/build_stubs.sh && \
-  echo '    // to the API \(e.g. in case you use sessions\) \ ' >> /stubs_nodejs/build_stubs.sh && \
-  echo '    res.setHeader\("Access-Control-Allow-Credentials", true\); \ ' >> /stubs_nodejs/build_stubs.sh && \
-  echo '\ ' >> /stubs_nodejs/build_stubs.sh && \
-  echo '    // Pass to next layer of middleware \ ' >> /stubs_nodejs/build_stubs.sh && \
-  echo '    next\(\); \ ' >> /stubs_nodejs/build_stubs.sh && \
-  echo '}\); \ ' >> /stubs_nodejs/build_stubs.sh && \
-  echo '\ ' >> /stubs_nodejs/build_stubs.sh && \
-  echo "' /stubs_nodejs/index.js" >> /stubs_nodejs/build_stubs.sh && \
-  \
-  echo '[[ -d /stubs_nodejs/node_modules ]] || npm install' >> /stubs_nodejs/build_stubs.sh && \
-  \
-  echo 'cp -v /api/* /stubs_nodejs/node_modules/oas3-tools/dist/middleware/swagger-ui || true' >> /stubs_nodejs/build_stubs.sh && \
-  \
-  sed -i 's| $||g' /stubs_nodejs/build_stubs.sh && \
-  \
-  chmod u+x /stubs_nodejs/build_stubs.sh && \
-  \
-  # On change of /api/openapi.yaml
+  chmod u+x /swagger_tools/run_nodejs_stubs_server.sh && \
+  chmod u+x /swagger_tools/swagger-codegen_convert_example.sh && \
+\
+  # convert yaml to jason and back again, as an example
   #
-  sed -i '/set -e/a [[ $( ps -C run_codegen_ser -o stat --no-headers ) == "S" ]] || nohup nodemon -L -w /api/openapi.yaml -x "/stubs_nodejs/build_stubs.sh && node /stubs_nodejs/index.js" </dev/null &' /usr/local/bin/docker-entrypoint.sh
+  cp -v /api/openapi.yaml /swagger_tools/swagger-codegen/ && \
+  /swagger_tools/swagger-codegen_convert_example.sh && \
+\
+  #
+  # instrument docker-entrypoint.sh to execute the /swagger_tools/run_nodejs_stubs_server.sh on start/re-start
+  #
+  sed -i '/set -e/a [[ $( ps -C run_codegen_ser -o stat --no-headers ) == "S" ]] || nohup /swagger_tools/run_nodejs_stubs_server.sh </dev/null 2>/dev/null 1>/dev/null &' /usr/local/bin/docker-entrypoint.sh
 
 EOF
 
 ```
-
-<!--
-java -jar /swagger_tools_/swagger-codegen/swagger-codegen-cli.jar generate -i ./api/project.yaml -l nodejs-server -o /nodejs_stubs
- -->
 
 [[Top]](#swagger-codegen-30-docker-container)
 
@@ -337,6 +349,10 @@ java -jar /swagger_tools_/swagger-codegen/swagger-codegen-cli.jar generate -i ./
 The following command will create the baseline image with specific packages pre-installed and the timezone set.
 
 ```shell
+
+touch ./api/.no_autostart
+touch ./api/.no_autogenerate
+
 CONTAINER_NAME=swagger_codegen
 IMAGE_VERSION=1.0.0
 
