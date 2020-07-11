@@ -13,9 +13,11 @@ cd /stubs_nodejs
 #
 [[ ! -f /api/.no_autogenerate ]] && /swagger_tools/generate_nodejs_stubs_server.sh
 
-[[ ! -f /stubs_nodejs/index.js ]] && { echo "Stubs are not available - can't start server" && exit; } 
-[[ ! -d /stubs_nodejs/node_modules ]] && { echo "Stubs were not installed - can't start server" && exit; } 
+[[ ! -f /stubs_nodejs/index.js ]] && { echo "Stubs are not available - can't start server" && exit; }
+[[ ! -d /stubs_nodejs/node_modules ]] && { echo "Stubs were not installed - can't start server" && exit; }
 
 # run the watcher service
-nodemon -L -w /api/* -w /stubs_nodejs/* -x "node /stubs_nodejs/index.js"
+## nodemon -L -w /api/* -w /stubs_nodejs/* -x "node /stubs_nodejs/index.js"
+
+nodemon -L -w /api/* -x "/swagger_tools/generate_nodejs_stubs_server.sh && node /stubs_nodejs/index.js"
 

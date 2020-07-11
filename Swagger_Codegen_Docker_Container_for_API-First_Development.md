@@ -19,26 +19,22 @@
       - [Create a container based on the new Image](#create-a-container-based-on-the-new-image)
       - [Connect to the running container](#connect-to-the-running-container)
       - [Test Swagger Codegen](#test-swagger-codegen)
-  - [Notes](#notes)
+  - [Important Notes](#important-notes)
+    - [Disable / Enable automatic Swagger Codegen server startup on container start/restart](#disable--enable-automatic-swagger-codegen-server-startup-on-container-startrestart)
     - [Initial API Specification Example YAML](#initial-api-specification-example-yaml)
-    - [JSON Versions of Specification](#json-versions-of-specification)
-    - [Where to change where Swagger Codegen looks for the YAML specification?](#where-to-change-where-swagger-codegen-looks-for-the-yaml-specification)
-    - [What listens on what ports?](#what-listens-on-what-ports)
-  - [Next Steps](#next-steps)
+    - [JSON Version of Specification](#json-version-of-specification)
+    - [Watching for changes and restarting Swagger Codegen server](#watching-for-changes-and-restarting-swagger-codegen-server)
+    - [Must I copy the openapi.yaml file to the container?](#must-i-copy-the-openapiyaml-file-to-the-container)
+    - [How to edit the yaml file in the Container](#how-to-edit-the-yaml-file-in-the-container)
+      - [Use docker cp command](#use-docker-cp-command)
+      - [Use VSCode Remote](#use-vscode-remote)
+      - [Use bound volume](#use-bound-volume)
+    - [Where to change where Swagger Codegen Docs Server looks for the YAML specification and under what name?](#where-to-change-where-swagger-codegen-docs-server-looks-for-the-yaml-specification-and-under-what-name)
+    - [What port does Swagger Codegen Stub Server listen on?](#what-port-does-swagger-codegen-stub-server-listen-on)
   - [Licensing](#licensing)
 
 <!-- /TOC -->
 
-<!--
-# TODO
-
--   write the 'how to use the image' writeup to go with the image
--   Upload the image to the docker hub
--   write a 'how to use the container' to go with the container
--   git and push to github
--   write a blog entry and post
--   write a tweet and post
- -->
 
 ## Introduction
 
@@ -107,7 +103,7 @@ openapi: "3.0.1"
 info:
   title: Weather API
   description: |
-    This API is a __test__ API for validation of local swagger editor
+    This API is a __test__ API for validation of local Swagger Codegen
     and swagger ui deployment and configuration
   version: 1.0.0
 servers:
@@ -234,11 +230,13 @@ cd /stubs_nodejs
 #
 [[ ! -f /api/.no_autogenerate ]] && /swagger_tools/generate_nodejs_stubs_server.sh
 
-[[ ! -f /stubs_nodejs/index.js ]] && { echo "Stubs are not available - can't start server" && exit; } 
-[[ ! -d /stubs_nodejs/node_modules ]] && { echo "Stubs were not installed - can't start server" && exit; } 
+[[ ! -f /stubs_nodejs/index.js ]] && { echo "Stubs are not available - can't start server" && exit; }
+[[ ! -d /stubs_nodejs/node_modules ]] && { echo "Stubs were not installed - can't start server" && exit; }
 
 # run the watcher service
-nodemon -L -w /api/* -w /stubs_nodejs/* -x "node /stubs_nodejs/index.js"
+## nodemon -L -w /api/* -w /stubs_nodejs/* -x "node /stubs_nodejs/index.js"
+
+nodemon -L -w /api/* -x "/swagger_tools/generate_nodejs_stubs_server.sh && node /stubs_nodejs/index.js"
 
 EOF
 
@@ -248,7 +246,7 @@ EOF
 
 #### Create swagger-codegen yaml to json and back convert example
 
-Create an example of converting YAML to JSON and back using swagger-codegen. Not needed for working with the Swagger Editor server in the container. 
+Create an example of converting YAML to JSON and back using swagger-codegen. Not needed for working with the Swagger Codegen server in the container.
 
 ``` shell
 HOST_DIR=/mnt/d/github_materials
@@ -259,7 +257,7 @@ cat <<-'EOF' > ${HOST_DIR}/swagger_codegen/scripts/swagger-codegen_convert_examp
 cd /swagger_tools/swagger-codegen
 
 # convert yaml to jason and back again example
-# not needed for work with the Swagger Editor server
+# not needed for work with the Swagger Codegen server
 #
 cd /swagger_tools/swagger-codegen
 
@@ -351,7 +349,7 @@ The following command will create the baseline image with specific packages pre-
 ```shell
 
 touch ./api/.no_autostart
-touch ./api/.no_autogenerate
+## touch ./api/.no_autogenerate
 
 CONTAINER_NAME=swagger_codegen
 IMAGE_VERSION=1.0.0
@@ -409,52 +407,215 @@ docker exec -it -w='/api' swagger_codegen bash -l
 
 #### Test Swagger Codegen
 
-Let's run the swagger-codegen server.
+The swagger-codegen server will be running at container start/restart unless a "prevent server startup" flag file, `/api/.no_autostart`, is visible to the container when it is started or restarted.
 
-```shell
-cd /swagger_tools/swagger-codegen
-## nodemon -L -w index.html -w /api/openapi.yaml -x "cp -v /api/openapi.yaml /swagger_tools/swagger-codegen/ && http-server -p 3003"
+In a host web browser open the API documentation served by the swagger-codgen container.
+
+[http://localhost:3003/docs/](http://localhost:3003/docs/)
+
+## Important Notes
+
+### Disable / Enable automatic Swagger Codegen server startup on container start/restart
+
+The Swagger Codegen Image is built to run the Swagger Codegen server when the container starts or restarts.
+
+To prevent autostart on container start and restart, create a file `/api/.no_autostart` in the container and restart the container.
+
+There are several ways to do this. The easiest is to execute the following commands from the Host:
+
+``` shell
+docker exec -it swagger_codegen ps -ef ## check whether server processes are running
+
+docker exec -it swagger_codegen touch /api/.no_autostart ## create file
+
+docker exec -it swagger_codegen ls -al /api/.no_autostart ## verify that file exists
+
+docker restart swagger_codegen ## restart container
+
+docker exec -it swagger_codegen ps -ef ## check whether server processes are running
 
 ```
 
-And in a host web browser let's open our API specification in the swagger-codegen.
+To re-enable autostart on container start and restart, delete the file `/api/.no_autostart` in the container and restart the container.
 
-http://localhost:3003/docs/
+``` shell
+docker exec -it swagger_codegen ps -ef ## check whether server processes are running
 
-## Notes
+docker exec -it swagger_codegen ls -al /api/.no_autostart ## verify that file exists
+
+docker exec -it swagger_codegen rm -vf /api/.no_autostart || true ## delete the file
+
+docker restart swagger_codegen ## restart container
+
+docker exec -it swagger_codegen ps -ef ## check whether server processes are running
+
+```
+
+[[Top]](#swagger-codegen-30-docker-container)
 
 ### Initial API Specification Example YAML
 
-OpenAPI Specification found in the `./api` directory was written to the Guest file `/api/openapi.yaml` during Docker Image _s_.
+Our original OpenAPI Specification was copied to the container file `/api/openapi.yaml` during Docker Image build.
 
 [[Top]](#swagger-codegen-30-docker-container)
 
-### JSON Versions of Specification
+### JSON Version of Specification
 
-Subsequent manipulations, during Docker Image build, resulted in creation of the following JSON equivalents:
+Our subsequent manipulations, during Docker Image build, resulted in the creation of the following equivalents:
 
 ```shell
-/api/openapi.json
-/api/converted/openapi.yaml
+/swagger_tools/swagger-codegen/openapi.json
+/swagger_tools/swagger-codegen/converted/openapi.yaml
 ```
 
 [[Top]](#swagger-codegen-30-docker-container)
 
-### Where to change where Swagger Codegen looks for the YAML specification?
+### Watching for changes and restarting Swagger Codegen server
 
-`/swagger_tools/swagger-codegen/index.js`.
+The Swagger Codegen server's `index.html` has been rigged to serve the file `openapi.yaml` from its  directory.
+
+The command in the `/swagger_tools/run_nodejs_stubs_server.sh` script is reproduced below.
+
+```shell
+# nodemon -L -w /api/* -x "/swagger_tools/generate_nodejs_stubs_server.sh && node /stubs_nodejs/index.js"
+
+```
+
+It instructs `nodemon` to watch for changes to files in directory `/api`.  
+If a change is detected, `nodemon` will re-generate stub server code and will restart the stub server.
+
+Please note that the generated stub server runs in the container.  
+Unless the container startup command is configured so that it mounts a host directory over the top of the containers `/api` directory, Swagger Codegen will only (re-)generate stubs if the `/api/openapi.yaml` file inside the container changes.
+
+There are a couple of ways to make changes to the `openapi.yaml` file that the Swagger Codegen sees and uses to (re-)generate nodejs stubs. One is to mount a Host directory over the top of container's the `/api` directory and another to use the `docker cp` command to copy a file to the container's `/api` directory.
+
+See section [How to edit the yaml file in the Container](#how-to-edit-the-yaml-file-in-the-container)
 
 [[Top]](#swagger-codegen-30-docker-container)
 
-### What listens on what ports?
+### Must I copy the openapi.yaml file to the container?
 
-Swagger Codegen is expected to listen on port 3003.
+**No.**
 
-If you change the listening port make sure to adjust your `docker.exe run ...` command otherwise you will not be able to connect to the listener in the container from outside.
+See section [How to edit the yaml file in the Container](#how-to-edit-the-yaml-file-in-the-container) for three ways to have edits reflected inside the container.
 
 [[Top]](#swagger-codegen-30-docker-container)
 
-## Next Steps
+### How to edit the yaml file in the Container
+
+There are at least 3 different ways in which the container's `/api/openapi.yaml` file can be supplied to teh Swagger Codegen container such that changes persist across container re-creation.
+
+#### Use docker cp command
+
+Docker has the ability to copy files from the Host to the Container and vice versa.
+
+Here is the `docker cp` usage:
+
+```shell
+"docker cp" requires exactly 2 arguments.
+See 'docker cp --help'.
+
+Usage:  docker cp [OPTIONS] CONTAINER:SRC_PATH DEST_PATH|-
+        docker cp [OPTIONS] SRC_PATH|- CONTAINER:DEST_PATH
+
+Copy files/folders between a container and the local filesystem
+```
+
+Assuming the container as discussed so far, with `openapi.yaml` in the container directory `/api` being the **_source-of-truth_**, here are the steps:
+
+1. Copy `openapi.yaml` from the container to the Host
+    1. Open a terminal window on the Host in the Host directory to which you want to copy the container's openapi.yaml
+    2. execute `docker cp swagger_codegen:/api/openapi.yaml ./`
+2. Copy `openapi.yaml` from the Host to the Container
+    1. Open a terminal window on Host in the Host directory to where oyu have the openapi.yaml file which you want to copy the container
+    2. execute `docker cp ./openapi.yaml swagger_codegen:/api`
+
+Using this method one can edit the original `openapi.yaml` file in the local Swagger Codegen, save it to the Host, and copy it to the container for the next Swagger Codegen session.
+
+#### Use VSCode Remote
+
+If you use VSCode for development, and VSCode has the Remote Containers extension installed, you can connect to the container and use VSCode to edit files directly in the container.
+
+Here are the steps:
+
+1. Start the container as discussed so far.
+2. Connect to the container as discussed in [Connect to the running container](#connect-to-the-running-container)
+3. Start VSCode on the **_Host_**
+4. Click on the green '**><sup>\<</sup>**' rectangle in the bottom-left corner (Shows "`Open Remote Window`" legend if one hovers the mouse over it)
+5. From the dropdown, top-centre of the VSCode window, choose "`Remote-Containers: Attach to Running Container...`"
+6. From the dropdown, select "`/swagger_codegen: swagger_codegen:1.0.0 ...`"
+7. When the new VSCode window opens, click on the "`Open Folder`" button and enter `/api`
+8. Edit the `openapi.yaml` file to your heart's content
+9. Save
+10. Refresh the Host Web Browser window to see changes
+
+The remote VSCode might need OpenAPI / Swagger extensions for pretty-printing, snippets and so on. Pick any you like.
+
+You can copy the `openapi.yaml` file between the Host and the Guest, in either direction, using docker cp command. See [Use docker cp command](#Use-docker-cp-command).
+
+#### Use bound volume
+
+It is possible to share a Host directory with the container in such a way that changes made in one environment are visible in the other.
+
+To effect this, one needs to start the docker container with a modified command line so that docker gets told what Host directory to share and where to "mount" it in the container's file system.
+
+**Steps:**
+
+1. On the Host, stop and remove the container if it is running: `docker container stop swagger_codegen; docker container rm swagger_codegen`
+2. On the host, start the container with the following command, assuming `/mnt/d/github_materials/swagger_codegen/api` is the host directory to share:
+
+```shell
+SOURCE_HOST_DIR=d:/github_materials/swagger_codegen
+
+IMAGE_VERSION="1.0.0"
+IMAGE_NAME="swagger_codegen"
+CONTAINER_NAME="swagger_codegen"
+CONTAINER_HOSTNAME="swagger_codegen"
+CONTAINER_VOLUME_MAPPING=" -v ${SOURCE_HOST_DIR}/api:/api"
+CONTAINER_MAPPED_PORTS=" -p 127.0.0.1:3003:3003/tcp "
+
+docker run \
+    --name ${CONTAINER_NAME} \
+    --hostname ${CONTAINER_HOSTNAME} \
+    ${CONTAINER_VOLUME_MAPPING} \
+    ${CONTAINER_MAPPED_PORTS} \
+    --detach \
+    --interactive \
+    --tty\
+        ${IMAGE_NAME}:${IMAGE_VERSION}
+
+```
+
+5. Use the Swagger Codegen or VSCode or IntelliJ or whatever in the Host to access and change the `openapi.yaml` file
+6. When done, pull down the `File->Save as YAML` and save the file as `openapi.yaml` in the Host directory `d\:github_materials\swagger_codegen\api`
+7. In Guest, note that stubs were regenerated and the stubs server was re-started because `nodemon` recognised that the file in the directory it is watching changed.
+8. In the container view the file `/api/openapi.yaml` and see the changes
+
+Because the host and the container share the (bound) volume where the API specification exists, it is possible to edit the file on Host and in the container and see the changes in either environment.
+
+[[Top]](#swagger-codegen-30-docker-container)
+
+### Where to change where Swagger Codegen Docs Server looks for the YAML specification and under what name?
+
+`/stubs_nodejs/index.js`.
+
+[[Top]](#swagger-codegen-30-docker-container)
+
+### What port does Swagger Codegen Stub Server listen on?
+
+Swagger Codegen server inside the container listens on port 3003.
+To change the port on which the Host listens, change the port mapping the container start command uses.
+
+For example:
+
+```shell
+CONTAINER_MAPPED_PORTS=" -p 127.0.0.1:3230:3003/tcp "
+
+```
+
+will change the port the Hosts maps to the container's 3003 from 3003 to 3230. The Host's web browser will need to use the url `http://localost:3230/docs` to connect to the Swagger Codegen documentation served from container.
+
+If you change the listening port make sure to adjust your `docker run ...` and `docker exec ...` commands otherwise you will not be able to connect to the listener in the container from outside.
 
 [[Top]](#swagger-codegen-30-docker-container)
 
@@ -470,102 +631,15 @@ Rights to Docker (and related), Git (and related), Debian, its packages and libr
 
 2020/07 MCz
 
-<!--
-https://stackoverflow.com/questions/51225277/run-script-on-change-in-nodemon
-
-https://stackoverflow.com/questions/28681491/within-docker-vm-gulp-watch-seems-to-not-work-well-on-volumes-hosted-from-the-h
-
-\#\#require /swagger/project/editor/api/swagger/swagger.yaml to be copied to /swagger/project/project.json
-
-cd /swagger/project
-
-cat <<-'EOF' > cvtYaml2Json.js
-
-const yaml = require("js-yaml");
-const path = require("path");
-const fs = require("fs");
-
-const swaggerYamlFile = "/swagger/project/editor/api/swagger/swagger.yaml";
-const swaggerJsonFile = "/swagger/project/project.json";
-
-// Converts yaml to json
-const doc = yaml.safeLoad(fs.readFileSync(swaggerYamlFile));
-fs.writeFileSync(swaggerJsonFile, JSON.stringify(doc, null, " "));
-
-EOF
-
-cd /swagger/project
-nodemon -L --watch ./editor/api/swagger/\* --exec "node ./cvtYaml2Json.js"
-
--->
 
 <!--
+# TODO
 
-References
+-   Upload the image to the docker hub
 
-https://github.com/Surnet/swagger-jsdoc
-https://www.npmjs.com/package/swagger-ui-express
-https://mherman.org/blog/swagger-and-nodejs/
-https://github.com/Surnet/swagger-jsdoc
-
-https://swagger.io/specification/#InfoObject
-
-https://www.youtube.com/watch?v=3ZK7TsA8a9Q&list=PLnBvgoOXZNCOiV54qjDOPA9R7DIDazxBA&index=4
-https://www.youtube.com/watch?v=3ZK7TsA8a9Q&list=PLnBvgoOXZNCOiV54qjDOPA9R7DIDazxBA&index=5
-https://www.youtube.com/watch?v=QKKMxboJMcw&list=PLnBvgoOXZNCOiV54qjDOPA9R7DIDazxBA&index=6
-https://www.youtube.com/watch?v=GBi9_NUYxS8&list=PLnBvgoOXZNCOiV54qjDOPA9R7DIDazxBA&index=7
-
-https://github.com/swagger-api/swagger-codegen
-
-https://github.com/OAI/OpenAPI-Specification/blob/master/versions/3.0.1.md#schema-object
-https://www.ecma-international.org/ecma-262/5.1/#sec-7.8.5
-https://o7planning.org/en/12219/ecmascript-regular-expressions-tutorial
-https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions
-
-https://stackoverflow.com/questions/49379006/what-is-the-correct-way-to-declare-a-date-in-an-openapi-swagger-file
-
-https://github.com/gulpjs/gulp
-https://gulpjs.com/docs/en/getting-started/quick-start
-https://gulpjs.com/docs/en/api/concepts
-https://github.com/gulpjs/gulp/archive/master.zip
-
-https://www.npmjs.com/package/swagger-codegen-dist
-https://www.npmjs.com/package/swagger-ui-dist
-
-https://github.com/swagger-api/swagger-codegen
-https://github.com/swagger-api/swagger-codegen#table-of-contents
-https://swagger.io/docs/open-source-tools/swagger-codegen/
-
-https://github.com/apigee-127/swagger-tools
-
-https://github.com/patrick-steele-idem/browser-refresh
-
--->
-<!--
-
-curl --include \
-     --no-buffer \
-     --header "Connection: Upgrade" \
-     --header "Upgrade: websocket" \
-     --header "Host: example.com:80" \
-     --header "Origin: http://example.com:80" \
-     --header "Sec-WebSocket-Key: SGVsbG8sIHdvcmxkIQ==" \
-     --header "Sec-WebSocket-Version: 13" \
-     http://example.com:80/
-
-curl --include \
-     --no-buffer \
-     --header "Connection: Upgrade" \
-     --header "Upgrade: websocket" \
-     --header "Host: localhost:3003" \
-     --header "Origin: http://localhost:3003" \
-     http://localhost:3003/
-
-https://linoxide.com/linux-command/use-ip-command-linux/
-
-ss -rl
-
-ss -4rlpt
-
-ss -lt
+-   write the 'how to use the image' writeup to go with the image
+-   write a 'how to use the container' to go with the container
+-   git and push to github
+-   write a blog entry and post
+-   write a tweet and post
  -->
