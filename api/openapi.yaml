@@ -2,11 +2,11 @@ openapi: "3.0.1"
 info:
   title: Weather API
   description: |
-    This API is a __test__ API for validation of local swagger editor
+    This API is a __test__ API for validation of local swagger codegen
     and swagger ui deployment and configuration
   version: 1.0.0
 servers:
-  - url: "http://localhost:3003/"
+  - url: 'http://localhost:3003/'
 tags:
   - name: Weather
     description: Weather, and so on
@@ -22,18 +22,17 @@ paths:
         And a __Princess__
         And all the Grandchildren
         And their Children
-        And their children's children
       operationId: getWeather
       responses:
-        "200":
-          description: "All is _well_, but not quite"
+        '200':
+          description: 'All is _well_, but not quite'
           content: {}
-        "500":
+        '500':
           description: Unexpected Error
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/response_500"
+                $ref: '#/components/schemas/response_500'
 components:
   schemas:
     response_500:
@@ -41,3 +40,4 @@ components:
       properties:
         message:
           type: string
+
