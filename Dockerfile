@@ -55,5 +55,5 @@ RUN \
   #
   # instrument docker-entrypoint.sh to execute the /swagger_tools/run_nodejs_stubs_server.sh on start/re-start
   #
-  sed -i '/set -e/a [[ $( ps -C run_codegen_ser -o stat --no-headers ) == "S" ]] || nohup /swagger_tools/run_nodejs_stubs_server.sh </dev/null 2>/dev/null 1>/dev/null &' /usr/local/bin/docker-entrypoint.sh
+  sed -i '/set -e/a [[ $( ps -C run_codegen_ser -o stat --no-headers ) == "S" ]] || nohup /swagger_tools/run_nodejs_stubs_server.sh &' /usr/local/bin/docker-entrypoint.sh
 
