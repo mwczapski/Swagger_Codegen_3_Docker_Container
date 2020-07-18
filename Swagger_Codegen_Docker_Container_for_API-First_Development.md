@@ -334,7 +334,7 @@ RUN \
   #
   # instrument docker-entrypoint.sh to execute the /swagger_tools/run_nodejs_stubs_server.sh on start/re-start
   #
-  sed -i '/set -e/a [[ $( ps -C run_codegen_ser -o stat --no-headers ) == "S" ]] || nohup /swagger_tools/run_nodejs_stubs_server.sh </dev/null 2>/dev/null 1>/dev/null &' /usr/local/bin/docker-entrypoint.sh
+  sed -i '/set -e/a [[ $( ps -C run_codegen_ser -o stat --no-headers ) == "S" ]] || nohup /swagger_tools/run_nodejs_stubs_server.sh &' /usr/local/bin/docker-entrypoint.sh
 
 EOF
 
@@ -623,7 +623,7 @@ If you change the listening port make sure to adjust your `docker run ...` and `
 
 The MIT License (MIT)
 
-Copyright © 2020 Michael Czapski
+Copyright ï¿½ 2020 Michael Czapski
 
 Rights to Docker (and related), Git (and related), Debian, its packages and libraries, and 3rd party packages and libraries, belong to their respective owners.
 
@@ -636,10 +636,10 @@ Rights to Docker (and related), Git (and related), Debian, its packages and libr
 # TODO
 
 -   Upload the image to the docker hub
-
 -   write the 'how to use the image' writeup to go with the image
 -   write a 'how to use the container' to go with the container
 -   git and push to github
 -   write a blog entry and post
 -   write a tweet and post
  -->
+-   
