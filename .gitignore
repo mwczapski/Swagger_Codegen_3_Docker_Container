@@ -10,6 +10,7 @@ Downloads
 _*
 node_modules
 stubs_nodejs
+UseCases
 
 # allow anything that starts with __env
 !__env*
