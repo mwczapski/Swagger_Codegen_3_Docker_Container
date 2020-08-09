@@ -2,6 +2,7 @@
 <!-- TOC -->
 
 - [Swagger Codegen in WSL Alpine](#swagger-codegen-in-wsl-alpine)
+  - [Introduction](#introduction)
   - [Prepare Development Environment](#prepare-development-environment)
     - [Create Working Directory](#create-working-directory)
     - [Check what WSL Distros Are Installed](#check-what-wsl-distros-are-installed)
@@ -17,6 +18,7 @@
     - [Create generate_nodejs_stubs_server.sh Script](#create-generate_nodejs_stubs_serversh-script)
     - [Create run_nodejs_stubs_server.sh Script](#create-run_nodejs_stubs_serversh-script)
     - [Create swagger-codegen yaml to json and back convert example](#create-swagger-codegen-yaml-to-json-and-back-convert-example)
+    - [Backup Alpine Distro](#backup-alpine-distro)
   - [Bonus Material - Windows 10 Shortcuts](#bonus-material---windows-10-shortcuts)
     - [Start Stub server](#start-stub-server)
     - [Run Swagger Editor in Chrome](#run-swagger-editor-in-chrome)
@@ -26,11 +28,36 @@
   - [Licensing](#licensing)
 
 <!-- /TOC -->
+
+## Introduction
+
+Swagger Codegen can be used to create client and server stubs in various languages for testing APIs as they are being developed. Swagger Codegen is a Java application and, evidently, requires Java 8 to run.
+
+Once generated, server stubs can be run to provide the means of testing the API under development through the Swagger Codegen UI interface, which replicates the Swagger Editor API testing pane. 
+
+This article walks the reader through the process of creating a Swagger Codegen environment in Windows 10's Windows Subsystem for Linux 2 Alpine Linux distribution. The environment includes the "automatic" stub generation script for NodeJS API stub server code and a stub server executor that re-generates and re-starts the stub server whenever the API under development is changed on disk.
+
+Why WSL2 Linux distro? Why Windows 10 itself? 
+
+Because adding JDK 8, and NodeJS, and a bunch of other things to the Windows 10 installation may not be a thing one wants to do for reasons of OS hygiene or for other reasons. Software installed in a WSL2 Linux distribution is somewhat isolated form the Widows 10 environment. The WSL distribution used to "host" it can be readily uninstalled, taking all that was installed there with it. 
+
+Why not Docker?
+
+Because Docker Desktop is a pretty complex infrastructure, requires administrative rights to install, requires baseline knowledge the acquisition of which is not necessarily a priority for an API developer, is not an easy environment to manage and is not strictly speaking required fort the task at hand. Also, sharing files between the Docker Host and the Docker Container can get tricky from host access perspective, guest ownership and guest permissions perspective.
+
+I have a bunch of articles on the topic of creating and using Swagger Editor and Swagger Codegen Docker Images and Docker Containers [on my Blog](https://blogs.czapski.id.au/?s=swagger), with [Docker Images on Docker Hub](https://hub.docker.com/r/mwczapski) and [How-To Articles on GitHub](https://github.com/mwczapski). 
+
+Why Alpine? 
+
+Because it is a very small distribution, yet perfectly adequate for the purpose. Windows 10 WSL `wsl.exe --export`-generated tar archive of the Alpine distribution configured for this work is around 230MB uncompressed and around 91MB compressed. Pretty small. It can be transported to another Windows 10 environment, `wsl.exe --import`'ed, and used with much less fuss than would be required for, for example, a containerised environment.
+
+Enjoy.
+
 ## Prepare Development Environment
 
 ### Create Working Directory
 
-In a Windows PowerShell window (I am using PowerShell 7.0.3):
+In a Windows PowerShell window (I am using PowerShell 7.0.3, not that it should make any difference for the limited use it is put to here):
 
 ``` powershell
 mkdir d:\swagger_api_dev
@@ -103,7 +130,10 @@ In Alpine root shell (from personal experience and [from a blog article](https:/
 apk update
 apk upgrade
 apk --update add curl ca-certificates tar wget dos2unix sqlite
-## from https://github.com/jeanblanchard/docker-alpine-glibc/blob/master/Dockerfile
+
+## add glibc for Java
+## from https://github.com/jeanblanchard/docker-alpine-glibc/blob/master/Dockerfile, with minor changes
+##
 export GLIBC_VERSION=2.32-r0
 curl -Lo /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub
 curl -Lo glibc.apk "https://github.com/sgerrand/alpine-pkg-glibc/releases/download/${GLIBC_VERSION}/glibc-${GLIBC_VERSION}.apk"
@@ -111,6 +141,8 @@ curl -Lo glibc-bin.apk "https://github.com/sgerrand/alpine-pkg-glibc/releases/do
 apk add glibc-bin.apk glibc.apk
 rm -rf glibc.apk glibc-bin.apk /var/cache/apk/*
 
+## install non-Oracle JDK-8
+##
 mkdir -pv /opt 
 mkdir -pv ~/Downloads
 cd /root/Downloads
@@ -126,10 +158,13 @@ ln -s /opt/zulu8.44.0.11-ca-jdk8.0.242-linux_musl_x64 /opt/jdk
 rm -rf /opt/jdk/*src.zip /opt/jdk/lib/missioncontrol /opt/jdk/lib/visualvm /opt/jdk/lib/*javafx* /opt/jdk/jre/lib/plugin.jar /opt/jdk/jre/lib/ext/jfxrt.jar /opt/jdk/jre/bin/javaws /opt/jdk/jre/lib/javaws.jar /opt/jdk/jre/lib/desktop /opt/jdk/jre/plugin /opt/jdk/jre/lib/deploy* /opt/jdk/jre/lib/*javafx* /opt/jdk/jre/lib/*jfx* /opt/jdk/jre/lib/amd64/libdecora_sse.so /opt/jdk/jre/lib/amd64/libprism_*.so /opt/jdk/jre/lib/amd64/libfxplugins.so /opt/jdk/jre/lib/amd64/libglass.so /opt/jdk/jre/lib/amd64/libgstreamer-lite.so /opt/jdk/jre/lib/amd64/libjavafx*.so /opt/jdk/jre/lib/amd64/libjfx*.so
 
 # Set environment
+#
 export JAVA_HOME=/opt/jdk
 export PATH=${PATH}:${JAVA_HOME}/bin
 java -version
 
+# add to root's ~/.profile
+#
 cat <<-'EOF' > ~/.profile
 
 export JAVA_HOME=/opt/jdk
@@ -147,7 +182,7 @@ The above yields the Alpine environment with JDK 8 installed.
 
 ### Install NodeJS
 
-I am installing NodeJS because I want to run NodeJS-based stubs and use the `nodemon` server to run them.
+I am installing NodeJS because I want to run NodeJS-based stubs and use the `nodemon` server to run them. One can install other runtime environments for stubs that use other technologies. JDK 8 is already installed so Java-based stubs can be compiled and packaged but running them will require a http/servlet server of one kind or another. This is out of scope for this article.
 
 From [StackOverflow article](https://stackoverflow.com/questions/58725215/how-to-install-nodejs-v13-0-1-in-alpine3-8), in WSL Alpine terminal install latest stable version of NodeJS:
 
@@ -168,6 +203,7 @@ In Alpine distro's ash shell terminal, as non-root user:
 ``` shell
 HOST_DIR=/mnt/d/swagger_api_dev
 cd ${HOST_DIR}
+npm init -y
 npm i http-server nodemon
 
 ```
@@ -206,7 +242,7 @@ chmod u+x  ~/.ashinit
 
 In a Windows PowerShell window :
 
-``` command
+``` powershell
 cd d:\swagger_api_dev
 $TS="20200809_1207"
 # note that -export will kill any running Apline terminal windows, presumably by shutting down the distro
@@ -224,7 +260,7 @@ del Alpine_export_${TS}.tar
 
 Create distribution directory hierarchy and "install" Swagger Codegen JAR.
 
-___In Alpine shell window___ (wsl.exe -d Alpine from PowerShell): 
+___In Alpine shell window___ (wsl.exe -d Alpine from PowerShell):
 
 ``` shell
 HOST_DIR=/mnt/d/swagger_api_dev
@@ -418,6 +454,22 @@ chmod u+x ${HOST_DIR}/scripts/swagger-codegen_convert_example.sh
 
 [[Top](#Swagger-Codegen-in-WSL-Alpine)]
 
+### Backup Alpine Distro
+
+In a Windows PowerShell window :
+
+``` command
+cd d:\swagger_api_dev
+$TS="20200809_1257"
+# note that -export will kill any running Apline terminal windows, presumably by shutting down the distro
+wsl.exe --export Alpine Alpine_export_${TS}.tar
+zip Alpine_export_${TS}.tar.zip Alpine_export_${TS}.tar
+del Alpine_export_${TS}.tar
+
+```
+
+[[Top](#Swagger-Codegen-in-WSL-Alpine)]
+
 ## Bonus Material - Windows 10 Shortcuts
 
 Create them using PowerShell.
@@ -567,7 +619,7 @@ $s.Save()
 
 The MIT License (MIT)
 
-Copyright &copy; 2020 Michael Czapski
+Copyright &copy;ï¿½2020 Michael Czapski
 
 [[Top](#Swagger-Codegen-in-WSL-Alpine)]
 
