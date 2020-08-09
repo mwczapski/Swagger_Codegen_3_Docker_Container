@@ -11,6 +11,7 @@ _*
 node_modules
 stubs_nodejs
 UseCases
+CUsersmczAppDataRoamingnpm
 
 # allow anything that starts with __env
 !__env*
